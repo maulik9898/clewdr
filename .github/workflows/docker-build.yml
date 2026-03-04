@@ -22,8 +22,6 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
 
     steps:
       - name: Checkout
@@ -108,7 +106,6 @@ jobs:
           while IFS= read -r tag; do
             if [ -n "$tag" ]; then
               docker buildx imagetools create -t "$tag" \
-                "${tag}-amd64" \
-                "${tag}-arm64"
+                "${tag}-amd64"
             fi
           done <<< "${{ steps.meta.outputs.tags }}"
