@@ -16,6 +16,8 @@ use crate::{
     error::ClewdrError,
 };
 
+use super::CodexTokenInfo;
+
 /// Model family for usage bucketing
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -455,6 +457,66 @@ impl Display for ClewdrCookie {
 impl Debug for ClewdrCookie {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(self, f)
+    }
+}
+
+/// Credential for OpenAI Codex (parallel to CookieStatus for Claude)
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct CodexCredential {
+    #[serde(default)]
+    pub token: Option<CodexTokenInfo>,
+    #[serde(default)]
+    pub account_id: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub reset_time: Option<i64>,
+}
+
+impl PartialEq for CodexCredential {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.label, &other.label) {
+            (Some(a), Some(b)) => a == b,
+            _ => match (&self.account_id, &other.account_id) {
+                (Some(a), Some(b)) => a == b,
+                _ => false,
+            },
+        }
+    }
+}
+
+impl Eq for CodexCredential {}
+
+impl Hash for CodexCredential {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Must be consistent with PartialEq: label takes priority over account_id
+        if self.label.is_some() {
+            self.label.hash(state);
+        } else {
+            self.account_id.hash(state);
+        }
+    }
+}
+
+impl CodexCredential {
+    pub fn ellipse(&self) -> String {
+        self.label
+            .as_deref()
+            .or(self.account_id.as_deref())
+            .unwrap_or("unknown")
+            .to_string()
+    }
+
+    pub fn reset(self) -> Self {
+        if let Some(t) = self.reset_time
+            && t < chrono::Utc::now().timestamp()
+        {
+            return Self {
+                reset_time: None,
+                ..self
+            };
+        }
+        self
     }
 }
 

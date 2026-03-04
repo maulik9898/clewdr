@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     Router,
     extract::DefaultBodyLimit,
@@ -14,14 +16,16 @@ use crate::{
         RequireAdminAuth, RequireBearerAuth, RequireFlexibleAuth,
         claude::{add_usage_info, apply_stop_sequences, check_overloaded, to_oai},
     },
-    providers::claude::ClaudeProviders,
-    services::cookie_actor::CookieActorHandle,
+    providers::{claude::ClaudeProviders, codex::CodexProvider},
+    services::{codex_actor::CodexActorHandle, cookie_actor::CookieActorHandle},
 };
 
 /// RouterBuilder for the application
 pub struct RouterBuilder {
     claude_providers: ClaudeProviders,
+    codex_provider: Arc<CodexProvider>,
     cookie_actor_handle: CookieActorHandle,
+    codex_actor_handle: CodexActorHandle,
     inner: Router,
 }
 
@@ -35,10 +39,16 @@ impl RouterBuilder {
         let cookie_handle = CookieActorHandle::start()
             .await
             .expect("Failed to start CookieActor");
+        let codex_handle = CodexActorHandle::start()
+            .await
+            .expect("Failed to start CodexActor");
         let claude_providers = crate::providers::claude::build_providers(cookie_handle.clone());
+        let codex_provider = Arc::new(CodexProvider::new(codex_handle.clone()));
         RouterBuilder {
             claude_providers,
+            codex_provider,
             cookie_actor_handle: cookie_handle,
+            codex_actor_handle: codex_handle,
             inner: Router::new(),
         }
     }
@@ -48,6 +58,7 @@ impl RouterBuilder {
     pub fn with_default_setup(self) -> Self {
         self.route_claude_code_endpoints()
             .route_claude_web_endpoints()
+            .route_codex_endpoints()
             .route_admin_endpoints()
             .route_claude_web_oai_endpoints()
             .route_claude_code_oai_endpoints()
@@ -91,6 +102,21 @@ impl RouterBuilder {
         self
     }
 
+    /// Sets up routes for Codex (OpenAI) proxy endpoints
+    fn route_codex_endpoints(mut self) -> Self {
+        let router = Router::new()
+            .route("/codex/v1/responses", post(api_codex_responses))
+            .route("/codex/v1/models", get(api_codex_models))
+            .layer(
+                ServiceBuilder::new()
+                    .layer(from_extractor::<RequireFlexibleAuth>())
+                    .layer(CompressionLayer::new()),
+            )
+            .with_state(self.codex_provider.clone());
+        self.inner = self.inner.merge(router);
+        self
+    }
+
     /// Sets up routes for API endpoints
     fn route_admin_endpoints(mut self) -> Self {
         let cookie_router = Router::new()
@@ -102,6 +128,17 @@ impl RouterBuilder {
                     .put(api_put_cookie),
             )
             .with_state(self.cookie_actor_handle.to_owned());
+
+        let codex_router = Router::new()
+            .route("/codex/login/start", post(api_codex_login_start))
+            .route("/codex/login/poll", post(api_codex_login_poll))
+            .route("/codex/credentials", get(api_get_codex_credentials))
+            .route(
+                "/codex/credential",
+                delete(api_delete_codex_credential),
+            )
+            .with_state(self.codex_actor_handle.to_owned());
+
         let admin_router = Router::new()
             .route("/auth", get(api_auth))
             .route("/config", get(api_get_config).post(api_post_config));
@@ -109,6 +146,7 @@ impl RouterBuilder {
             .nest(
                 "/api",
                 cookie_router
+                    .merge(codex_router)
                     .merge(admin_router)
                     .layer(from_extractor::<RequireAdminAuth>()),
             )

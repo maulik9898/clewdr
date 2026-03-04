@@ -28,6 +28,10 @@ const TabNavigation: React.FC<TabNavigationProps> = ({
           return "text-blue-400 border-b-2 border-blue-400";
         case "amber":
           return "text-amber-400 border-b-2 border-amber-400";
+        case "orange":
+          return "text-orange-400 border-b-2 border-orange-400";
+        case "violet":
+          return "text-violet-400 border-b-2 border-violet-400";
         default:
           return "text-cyan-400 border-b-2 border-cyan-400";
       }

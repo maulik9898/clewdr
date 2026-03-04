@@ -198,7 +198,101 @@ export async function saveConfig(configData: ConfigData) {
   return response;
 }
 
-// Add this new function to frontend/src/api/index.ts
+// ---- Codex API functions ----
+
+/**
+ * Start device code login flow for Codex
+ */
+export async function startCodexLogin(signal?: AbortSignal) {
+  const token = localStorage.getItem("authToken") || "";
+  const response = await fetch("/api/codex/login/start", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    signal,
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data?.error || `Failed to start login: ${response.status}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Poll for device code login completion
+ */
+export async function pollCodexLogin(
+  device_auth_id: string,
+  user_code: string,
+  interval: number,
+  signal?: AbortSignal
+) {
+  const token = localStorage.getItem("authToken") || "";
+  const response = await fetch("/api/codex/login/poll", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ device_auth_id, user_code, interval }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data?.error || `Login poll failed: ${response.status}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Get all Codex credentials
+ */
+export async function getCodexCredentials() {
+  const token = localStorage.getItem("authToken") || "";
+  const response = await fetch("/api/codex/credentials", {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch credentials: ${response.status}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Delete a Codex credential
+ */
+export async function deleteCodexCredential(credential: {
+  label?: string;
+  account_id?: string;
+}) {
+  const token = localStorage.getItem("authToken") || "";
+  const response = await fetch("/api/codex/credential", {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(credential),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete credential: ${response.status}`);
+  }
+
+  return response;
+}
 
 /**
  * Sends multiple cookies to the server as a batch.

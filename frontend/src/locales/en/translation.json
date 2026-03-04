@@ -24,6 +24,7 @@
   },
   "tabs": {
     "claude": "Claude",
+    "codex": "Codex",
     "config": "Config",
     "auth": "Auth"
   },
@@ -170,6 +171,42 @@
         "customA": "Custom Assistant (optional)",
         "customPrompt": "Custom Prompt"
       }
+    }
+  },
+  "codex": {
+    "tabs": {
+      "login": "Login",
+      "credentials": "Credentials"
+    },
+    "login": {
+      "title": "Codex Login",
+      "description": "Login with your OpenAI account to use ClewdR as a Codex proxy.",
+      "startButton": "Start Login",
+      "visitUrl": "Visit the following URL:",
+      "enterCode": "And enter this code:",
+      "waiting": "Waiting for authorization...",
+      "requesting": "Requesting device code...",
+      "success": "Login successful! Account: {{label}}",
+      "timeout": "Login timed out. Please try again.",
+      "unknownError": "An unknown error occurred.",
+      "loginAnother": "Login Another Account",
+      "retry": "Try Again"
+    },
+    "credentials": {
+      "title": "Codex Credentials",
+      "none": "No Codex credentials configured. Use the Login tab to add one.",
+      "fetchError": "Failed to fetch credentials",
+      "deleteConfirm": "Are you sure you want to delete this credential?",
+      "deleteError": "Failed to delete credential",
+      "noToken": "No token",
+      "stale": "Token stale (needs refresh)",
+      "valid": "Token valid",
+      "active": "Active",
+      "cooldown": "Cooldown",
+      "unknown": "Unknown",
+      "lastRefresh": "Last refresh",
+      "resetsAt": "Resets at",
+      "delete": "Delete"
     }
   },
   "common": {

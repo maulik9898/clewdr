@@ -19,6 +19,18 @@ pub const CC_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 pub const CC_TOKEN_URL: &str = "https://api.anthropic.com/v1/oauth/token";
 pub const CC_REDIRECT_URI: &str = "https://console.anthropic.com/oauth/code/callback";
 
+// Codex (OpenAI) OAuth constants
+pub const CODEX_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+pub const CODEX_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
+pub const CODEX_DEVICE_CODE_URL: &str =
+    "https://auth.openai.com/api/accounts/deviceauth/usercode";
+pub const CODEX_DEVICE_TOKEN_URL: &str =
+    "https://auth.openai.com/api/accounts/deviceauth/token";
+pub const CODEX_DEVICE_VERIFY_URL: &str = "https://auth.openai.com/codex/device";
+pub const CODEX_API_BASE: &str = "https://api.openai.com/v1/";
+/// ChatGPT auth (device code login) uses a different backend
+pub const CODEX_CHATGPT_API_BASE: &str = "https://chatgpt.com/backend-api/codex/";
+
 pub static ENDPOINT_URL: LazyLock<Url> = LazyLock::new(|| {
     Url::parse(CLAUDE_ENDPOINT).unwrap_or_else(|_| {
         panic!("Failed to parse endpoint URL: {CLAUDE_ENDPOINT}");
