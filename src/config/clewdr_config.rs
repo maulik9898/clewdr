@@ -16,16 +16,16 @@ use passwords::PasswordGenerator;
 use serde::{Deserialize, Serialize};
 use tokio::spawn;
 use tracing::error;
-use wreq::{Proxy, Url};
+use url::Url;
+use wreq::Proxy;
 
 use super::{CONFIG_PATH, ENDPOINT_URL};
 use crate::{
     Args,
     config::{
-        CC_CLIENT_ID, CODEX_CLIENT_ID, CodexCredential, CookieStatus, UselessCookie,
-        default_check_update, default_ip, default_max_retries, default_port,
-        default_skip_cool_down, default_use_real_roles, default_auto_probe_1m_opus_46,
-        default_auto_probe_1m_sonnet,
+        CC_CLIENT_ID, CookieStatus, UselessCookie, default_check_update, default_ip,
+        default_max_retries, default_port, default_skip_cool_down, default_use_real_roles,
+        CODEX_CLIENT_ID, CodexCredential,
     },
     error::ClewdrError,
     utils::enabled,
@@ -98,10 +98,6 @@ pub struct ClewdrConfig {
     pub enable_web_count_tokens: bool,
     #[serde(default)]
     pub sanitize_messages: bool,
-    #[serde(default = "default_auto_probe_1m_sonnet")]
-    pub auto_probe_1m_sonnet: bool,
-    #[serde(default = "default_auto_probe_1m_opus_46")]
-    pub auto_probe_1m_opus_46: bool,
 
     // Cookie settings, can hot reload
     #[serde(default)]
@@ -167,8 +163,6 @@ impl Default for ClewdrConfig {
             web_search: false,
             enable_web_count_tokens: false,
             sanitize_messages: false,
-            auto_probe_1m_sonnet: default_auto_probe_1m_sonnet(),
-            auto_probe_1m_opus_46: default_auto_probe_1m_opus_46(),
             skip_first_warning: false,
             skip_second_warning: false,
             skip_restricted: false,
@@ -241,16 +235,6 @@ impl Display for ClewdrConfig {
             f,
             "Web count_tokens: {}",
             enabled(self.enable_web_count_tokens)
-        )?;
-        writeln!(
-            f,
-            "Auto probe 1M Sonnet: {}",
-            enabled(self.auto_probe_1m_sonnet)
-        )?;
-        writeln!(
-            f,
-            "Auto probe 1M Opus 4.6: {}",
-            enabled(self.auto_probe_1m_opus_46)
         )?;
         Ok(())
     }

@@ -9,7 +9,7 @@ use axum::{
     Json,
     extract::{FromRequest, Request},
 };
-use http::header::USER_AGENT;
+use http::HeaderMap;
 use serde_json::{Value, json};
 
 use crate::{
@@ -62,17 +62,86 @@ pub struct ClaudeWebContext {
 /// This is a standard test message sent by clients like SillyTavern
 /// to verify connectivity. The system detects these messages and
 /// responds with a predefined test response to confirm service availability.
-static TEST_MESSAGE_CLAUDE: LazyLock<Message> = LazyLock::new(|| {
-    Message::new_blocks(
-        Role::User,
-        vec![ContentBlock::text("Hi")],
-    )
-});
+static TEST_MESSAGE_CLAUDE: LazyLock<Message> =
+    LazyLock::new(|| Message::new_blocks(Role::User, vec![ContentBlock::text("Hi")]));
 
 /// Predefined test message in OpenAI format for connection testing
 static TEST_MESSAGE_OAI: LazyLock<Message> = LazyLock::new(|| Message::new_text(Role::User, "Hi"));
 
 struct NormalizeRequest(CreateMessageParams, ClaudeApiFormat);
+
+fn drop_empty_system(body: &mut CreateMessageParams) {
+    let Some(system) = body.system.take() else {
+        return;
+    };
+
+    let is_empty = match &system {
+        Value::Null => true,
+        Value::String(text) => text.trim().is_empty(),
+        Value::Array(systems) => systems.is_empty()
+            || systems.iter().all(|entry| match entry {
+                Value::Null => true,
+                Value::String(text) => text.trim().is_empty(),
+                Value::Object(obj) if matches!(obj.get("type"), Some(Value::String(t)) if t == "text") => {
+                    obj.get("text")
+                        .and_then(Value::as_str)
+                        .is_none_or(|text| text.trim().is_empty())
+                }
+                _ => false,
+            }),
+        _ => false,
+    };
+
+    body.system = (!is_empty).then_some(system);
+}
+
+fn strip_ephemeral_scope_from_system(system: &mut Value) {
+    let Some(items) = system.as_array_mut() else {
+        return;
+    };
+
+    for item in items {
+        let Some(obj) = item.as_object_mut() else {
+            continue;
+        };
+        let Some(cache_control) = obj.get_mut("cache_control") else {
+            continue;
+        };
+        let Some(cache_obj) = cache_control.as_object_mut() else {
+            continue;
+        };
+
+        if let Some(ephemeral) = cache_obj.get_mut("ephemeral")
+            && let Some(ephemeral_obj) = ephemeral.as_object_mut()
+        {
+            ephemeral_obj.remove("scope");
+        }
+
+        if matches!(cache_obj.get("type"), Some(Value::String(t)) if t == "ephemeral") {
+            cache_obj.remove("scope");
+        }
+    }
+}
+
+fn extract_anthropic_beta_header(headers: &HeaderMap) -> Option<String> {
+    let mut parts = Vec::new();
+    for value in headers.get_all("anthropic-beta") {
+        if let Ok(raw) = value.to_str() {
+            for token in raw.split(',') {
+                let token = token.trim();
+                if !token.is_empty() {
+                    parts.push(token.to_string());
+                }
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(","))
+    }
+}
 
 fn sanitize_messages(msgs: Vec<Message>) -> Vec<Message> {
     msgs.into_iter()
@@ -142,6 +211,7 @@ where
             body.model = body.model.trim_end_matches("-thinking").to_string();
             body.thinking.get_or_insert(Thinking::new(4096));
         }
+        drop_empty_system(&mut body);
         Ok(Self(body, format))
     }
 }
@@ -190,6 +260,8 @@ pub struct ClaudeCodeContext {
     pub(super) api_format: ClaudeApiFormat,
     /// The hash of the system messages for caching purposes
     pub(super) system_prompt_hash: Option<u64>,
+    /// Optional anthropic-beta header forwarded from client request
+    pub(super) anthropic_beta: Option<String>,
     // Usage information for the request
     pub(super) usage: Usage,
 }
@@ -203,20 +275,10 @@ where
     type Rejection = ClewdrError;
 
     async fn from_request(req: Request, _: &S) -> Result<Self, Self::Rejection> {
-        let ua = req
-            .headers()
-            .get(USER_AGENT)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_lowercase();
-        let is_from_cc = ua.contains("claude-code") || ua.contains("claude-cli");
+        let anthropic_beta = extract_anthropic_beta_header(req.headers());
         let NormalizeRequest(mut body, format) = NormalizeRequest::from_request(req, &()).await?;
         // Handle thinking mode by modifying the model name
-        if (body.model.contains("opus-4-1")
-            || body.model.contains("sonnet-4-5")
-            || body.model.contains("opus-4-5")
-            || body.model.contains("opus-4-6"))
-            && body.temperature.is_some()
+        if  body.temperature.is_some()
         {
             body.top_p = None; // temperature and top_p cannot be used together in Opus-4.x
         }
@@ -233,44 +295,42 @@ where
         // Determine streaming status and API format
         let stream = body.stream.unwrap_or_default();
 
-        // If the request is not from Claude Code, add a prelude to the system messages
-        if !is_from_cc {
-            // Add a prelude text block to the system messages
-            const PRELUDE_TEXT: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
-            let prelude_blk = ContentBlock::text(
-                CLEWDR_CONFIG
-                    .load()
-                    .custom_system
-                    .clone()
-                    .unwrap_or_else(|| PRELUDE_TEXT.to_string()),
-            );
+        if let Some(custom_system) = CLEWDR_CONFIG
+            .load()
+            .custom_system
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+        {
+            let custom_system_block = ContentBlock::text(custom_system);
             match body.system {
                 Some(Value::String(ref text)) => {
                     let text_content = ContentBlock::text(text.to_owned());
-                    body.system = Some(json!([prelude_blk, text_content]));
+                    body.system = Some(json!([custom_system_block, text_content]));
                 }
-                Some(Value::Array(ref mut a)) => {
-                    a.insert(0, json!(prelude_blk));
+                Some(Value::Array(ref mut systems)) => {
+                    systems.insert(0, json!(custom_system_block));
                 }
                 _ => {
-                    body.system = Some(json!([prelude_blk]));
+                    body.system = Some(json!([custom_system_block]));
                 }
             }
+        }
+
+        if let Some(system) = body.system.as_mut() {
+            strip_ephemeral_scope_from_system(system);
         }
 
         let cache_systems = body
             .system
             .as_ref()
-            .ok_or(ClewdrError::BadRequest {
-                msg: "Empty system prompt",
-            })?
-            .as_array()
-            .ok_or(ClewdrError::BadRequest {
-                msg: "System prompt is not an array",
-            })?
-            .iter()
-            .filter(|s| s["cache_control"].as_object().is_some())
-            .collect::<Vec<_>>();
+            .and_then(Value::as_array)
+            .map(|systems| {
+                systems
+                    .iter()
+                    .filter(|s| s["cache_control"].as_object().is_some())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let system_prompt_hash = (!cache_systems.is_empty()).then(|| {
             let mut hasher = DefaultHasher::new();
             cache_systems.hash(&mut hasher);
@@ -283,6 +343,7 @@ where
             stream,
             api_format: format,
             system_prompt_hash,
+            anthropic_beta,
             usage: Usage {
                 input_tokens,
                 output_tokens: 0, // Placeholder for output token count

@@ -172,8 +172,8 @@ impl CookieStatus {
             cookie,
             token: None,
             reset_time,
-            supports_claude_1m_sonnet: None,
-            supports_claude_1m_opus: None,
+            supports_claude_1m_sonnet: Some(true),
+            supports_claude_1m_opus: Some(true),
             count_tokens_allowed: None,
 
             session_usage: UsageBreakdown::default(),
@@ -422,9 +422,8 @@ impl FromStr for ClewdrCookie {
         static RE_FULL: LazyLock<Regex> = LazyLock::new(|| {
             Regex::new(r"sk-ant-sid\d{2}-[0-9A-Za-z_-]{86,120}-[0-9A-Za-z_-]{6}AA").unwrap()
         });
-        static RE_BASE: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r"^[0-9A-Za-z_-]{86,120}-[0-9A-Za-z_-]{6}AA$").unwrap()
-        });
+        static RE_BASE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^[0-9A-Za-z_-]{86,120}-[0-9A-Za-z_-]{6}AA$").unwrap());
 
         let cleaned = s
             .trim()
