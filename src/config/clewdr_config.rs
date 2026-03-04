@@ -22,9 +22,10 @@ use super::{CONFIG_PATH, ENDPOINT_URL};
 use crate::{
     Args,
     config::{
-        CC_CLIENT_ID, CookieStatus, UselessCookie, default_check_update, default_ip,
-        default_max_retries, default_port, default_skip_cool_down, default_use_real_roles,
-        default_auto_probe_1m_opus_46, default_auto_probe_1m_sonnet,
+        CC_CLIENT_ID, CODEX_CLIENT_ID, CodexCredential, CookieStatus, UselessCookie,
+        default_check_update, default_ip, default_max_retries, default_port,
+        default_skip_cool_down, default_use_real_roles, default_auto_probe_1m_opus_46,
+        default_auto_probe_1m_sonnet,
     },
     error::ClewdrError,
     utils::enabled,
@@ -132,6 +133,12 @@ pub struct ClewdrConfig {
     #[serde(default)]
     pub custom_system: Option<String>,
 
+    // Codex (OpenAI) settings
+    #[serde(default)]
+    pub codex_credentials: Vec<CodexCredential>,
+    #[serde(default)]
+    pub codex_client_id: Option<String>,
+
     // Skip field, can hot reload
     #[serde(skip)]
     pub wreq_proxy: Option<Proxy>,
@@ -170,6 +177,8 @@ impl Default for ClewdrConfig {
             skip_normal_pro: false,
             claude_code_client_id: None,
             custom_system: None,
+            codex_credentials: Vec::new(),
+            codex_client_id: None,
             no_fs: false,
             log_to_file: false,
         }
@@ -197,11 +206,13 @@ impl Display for ClewdrConfig {
             f,
             "Claude(Claude and OpenAI format) Endpoint: {}\n\
             Claude Code(Claude and OpenAI format) Endpoint: {}\n\
+            Codex(OpenAI Response format) Endpoint: {}\n\
             API Password: {}\n\
             Web Admin Endpoint: {}\n\
             Web Admin Password: {}\n",
             api_url.to_string().green().underline(),
             (web_url.to_string() + "code/v1").green().underline(),
+            (web_url.to_string() + "codex/v1").green().underline(),
             self.password.yellow(),
             web_url.to_string().green().underline(),
             self.admin_password.yellow(),
@@ -258,6 +269,13 @@ impl ClewdrConfig {
         self.claude_code_client_id
             .as_deref()
             .unwrap_or(CC_CLIENT_ID)
+            .to_string()
+    }
+
+    pub fn codex_client_id(&self) -> String {
+        self.codex_client_id
+            .as_deref()
+            .unwrap_or(CODEX_CLIENT_ID)
             .to_string()
     }
 
@@ -343,6 +361,11 @@ impl ClewdrConfig {
             self.admin_password = generate_password();
         }
         self.cookie_array = self.cookie_array.into_iter().map(|x| x.reset()).collect();
+        self.codex_credentials = self
+            .codex_credentials
+            .into_iter()
+            .map(|x| x.reset())
+            .collect();
         self.wreq_proxy = self.proxy.to_owned().and_then(|p| {
             Proxy::all(p)
                 .inspect_err(|e| {

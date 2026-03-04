@@ -24,6 +24,7 @@
   },
   "tabs": {
     "claude": "Claude",
+    "codex": "Codex",
     "config": "配置",
     "auth": "认证"
   },
@@ -172,6 +173,42 @@
         "customA": "自定义 Assistant（可选）",
         "customPrompt": "自定义提示词"
       }
+    }
+  },
+  "codex": {
+    "tabs": {
+      "login": "登录",
+      "credentials": "凭证"
+    },
+    "login": {
+      "title": "Codex 登录",
+      "description": "使用您的 OpenAI 账户登录，以将 ClewdR 作为 Codex 代理使用。",
+      "startButton": "开始登录",
+      "visitUrl": "请访问以下链接：",
+      "enterCode": "并输入此代码：",
+      "waiting": "等待授权中...",
+      "requesting": "正在请求设备代码...",
+      "success": "登录成功！账户：{{label}}",
+      "timeout": "登录超时。请重试。",
+      "unknownError": "发生未知错误。",
+      "loginAnother": "登录另一个账户",
+      "retry": "重试"
+    },
+    "credentials": {
+      "title": "Codex 凭证",
+      "none": "暂无 Codex 凭证。请使用登录标签页添加。",
+      "fetchError": "获取凭证失败",
+      "deleteConfirm": "确定要删除此凭证吗？",
+      "deleteError": "删除凭证失败",
+      "noToken": "无令牌",
+      "stale": "令牌过期（需要刷新）",
+      "valid": "令牌有效",
+      "active": "活跃",
+      "cooldown": "冷却中",
+      "unknown": "未知",
+      "lastRefresh": "上次刷新",
+      "resetsAt": "重置于",
+      "delete": "删除"
     }
   },
   "common": {
