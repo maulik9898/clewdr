@@ -2,7 +2,6 @@ mod chat;
 mod exchange;
 
 use snafu::ResultExt;
-use wreq::ClientBuilder;
 use wreq_util::Emulation;
 
 use crate::{
@@ -29,7 +28,7 @@ pub enum CodexTokenStatus {
 impl CodexState {
     pub fn new(codex_actor_handle: CodexActorHandle) -> Self {
         let proxy = CLEWDR_CONFIG.load().wreq_proxy.to_owned();
-        let mut builder = ClientBuilder::new().emulation(Emulation::Chrome136);
+        let mut builder = wreq::Client::builder().emulation(Emulation::Chrome136);
         if let Some(ref p) = proxy {
             builder = builder.proxy(p.to_owned());
         }
@@ -55,7 +54,7 @@ impl CodexState {
         self.credential = Some(cred.clone());
         // Rebuild client with latest proxy settings
         let proxy = CLEWDR_CONFIG.load().wreq_proxy.to_owned();
-        let mut builder = ClientBuilder::new().emulation(Emulation::Chrome136);
+        let mut builder = wreq::Client::builder().emulation(Emulation::Chrome136);
         if let Some(ref p) = proxy {
             builder = builder.proxy(p.to_owned());
         }

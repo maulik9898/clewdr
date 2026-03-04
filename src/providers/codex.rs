@@ -101,7 +101,7 @@ impl CodexProvider {
 
         let mut req = state
             .client
-            .get(url)
+            .get(url.as_str())
             .bearer_auth(&access_token)
             .header("OpenAI-Beta", "responses=experimental");
 

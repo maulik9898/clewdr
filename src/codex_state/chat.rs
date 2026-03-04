@@ -146,7 +146,7 @@ impl CodexState {
 
         let mut req = self
             .client
-            .post(url)
+            .post(url.as_str())
             .bearer_auth(access_token)
             .header("content-type", "application/json")
             .header("accept", "text/event-stream")
