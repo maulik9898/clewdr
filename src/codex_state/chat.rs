@@ -140,6 +140,8 @@ impl CodexState {
             let stream = val.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
             if let Some(obj) = val.as_object_mut() {
                 obj.remove("prompt_cache_retention");
+                obj.remove("prompt_cache_key");
+                obj.remove("safety_identifier");
             }
             let cleaned = serde_json::to_vec(&val).unwrap_or_else(|_| body.to_vec());
             (Bytes::from(cleaned), stream)
