@@ -133,11 +133,17 @@ impl CodexState {
         access_token: &str,
         body: Bytes,
     ) -> Result<axum::response::Response, ClewdrError> {
-        // Check if the request body has "stream": true
-        let request_wants_stream = serde_json::from_slice::<serde_json::Value>(&body)
-            .ok()
-            .and_then(|v| v.get("stream")?.as_bool())
-            .unwrap_or(false);
+        // Strip unsupported parameters and check stream flag
+        let (body, request_wants_stream) = {
+            let mut val: serde_json::Value =
+                serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+            let stream = val.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
+            if let Some(obj) = val.as_object_mut() {
+                obj.remove("prompt_cache_retention");
+            }
+            let cleaned = serde_json::to_vec(&val).unwrap_or_else(|_| body.to_vec());
+            (Bytes::from(cleaned), stream)
+        };
 
         let url = self
             .endpoint
