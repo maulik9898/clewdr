@@ -5,15 +5,6 @@ use tiktoken_rs::o200k_base;
 use super::claude::{CreateMessageParams as ClaudeCreateMessageParams, *};
 use crate::types::claude::Message;
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum Effort {
-    Low = 256,
-    #[default]
-    Medium = 256 * 8,
-    High = 256 * 8 * 8,
-}
-
 impl From<CreateMessageParams> for ClaudeCreateMessageParams {
     fn from(params: CreateMessageParams) -> Self {
         let (systems, messages): (Vec<Message>, Vec<Message>) = params
@@ -41,9 +32,7 @@ impl From<CreateMessageParams> for ClaudeCreateMessageParams {
             context_management: None,
             mcp_servers: None,
             stop_sequences: params.stop,
-            thinking: params
-                .thinking
-                .or_else(|| params.reasoning_effort.map(|e| Thinking::new(e as u64))),
+            thinking: params.thinking,
             temperature: params.temperature,
             stream: params.stream,
             top_k: params.top_k,
@@ -70,9 +59,6 @@ pub struct CreateMessageParams {
     pub messages: Vec<Message>,
     /// Model to use
     pub model: String,
-    /// Reasoning effort for response generation
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning_effort: Option<Effort>,
     /// Frequency penalty for response generation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<f32>,
@@ -85,9 +71,9 @@ pub struct CreateMessageParams {
     /// Whether to stream the response
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
-    /// Thinking mode configuration
+    /// Thinking mode configuration (passthrough, opaque to clewdr)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub thinking: Option<Thinking>,
+    pub thinking: Option<serde_json::Value>,
     /// Top-k sampling
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_k: Option<u32>,

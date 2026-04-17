@@ -19,9 +19,7 @@ use crate::{
     error::ClewdrError,
     middleware::claude::{ClaudeApiFormat, ClaudeContext},
     types::{
-        claude::{
-            ContentBlock, CreateMessageParams, Message, MessageContent, Role, Thinking, Usage,
-        },
+        claude::{ContentBlock, CreateMessageParams, Message, MessageContent, Role, Usage},
         oai::CreateMessageParams as OaiCreateMessageParams,
     },
 };
@@ -276,10 +274,6 @@ where
             // Trim whitespace and drop empty assistant turns when enabled.
             body.messages = sanitize_messages(body.messages);
         }
-        if body.model.ends_with("-thinking") {
-            body.model = body.model.trim_end_matches("-thinking").to_string();
-            body.thinking.get_or_insert(Thinking::new(4096));
-        }
         drop_empty_system(&mut body);
         Ok(Self(body, format))
     }
@@ -346,10 +340,6 @@ where
     async fn from_request(req: Request, _: &S) -> Result<Self, Self::Rejection> {
         let anthropic_beta = extract_anthropic_beta_header(req.headers());
         let NormalizeRequest(mut body, format) = NormalizeRequest::from_request(req, &()).await?;
-        // Handle thinking mode by modifying the model name
-        if body.temperature.is_some() {
-            body.top_p = None; // temperature and top_p cannot be used together in Opus-4.x
-        }
 
         // Check for test messages and respond appropriately
         if !body.stream.unwrap_or_default()

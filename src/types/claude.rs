@@ -1,7 +1,6 @@
 use serde::de;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use serde_with::{serde_as, DefaultOnError};
 use tiktoken_rs::o200k_base;
 
 #[derive(Debug)]
@@ -13,30 +12,6 @@ pub struct RequiredMessageParams {
 
 pub(super) fn default_max_tokens() -> u32 {
     8192
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct OutputConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub effort: Option<OutputEffort>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub format: Option<OutputFormat>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "lowercase")]
-pub enum OutputEffort {
-    Low,
-    Medium,
-    High,
-    Max,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(tag = "type")]
-pub enum OutputFormat {
-    #[serde(rename = "json_schema")]
-    JsonSchema { schema: serde_json::Value },
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -58,7 +33,6 @@ pub struct McpServer {
     pub tool_configuration: Option<serde_json::Value>,
 }
 /// Parameters for creating a message
-#[serde_as]
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 pub struct CreateMessageParams {
     /// Maximum number of tokens to generate
@@ -89,11 +63,9 @@ pub struct CreateMessageParams {
     /// Whether to stream the response
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
-    /// Thinking mode configuration
-    #[serde(default)]
-    #[serde_as(deserialize_as = "DefaultOnError")]
+    /// Thinking mode configuration (passthrough, opaque to clewdr)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub thinking: Option<Thinking>,
+    pub thinking: Option<serde_json::Value>,
     /// Top-k sampling
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_k: Option<u32>,
@@ -109,12 +81,12 @@ pub struct CreateMessageParams {
     /// Request metadata
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Metadata>,
-    /// Output configuration (effort hints)
+    /// Output configuration (passthrough, opaque to clewdr)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_config: Option<OutputConfig>,
-    /// Output format configuration (e.g. JSON schema)
+    pub output_config: Option<serde_json::Value>,
+    /// Output format configuration (passthrough, opaque to clewdr)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_format: Option<OutputFormat>,
+    pub output_format: Option<serde_json::Value>,
     /// Service tier selection
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<ServiceTier>,
@@ -148,21 +120,6 @@ impl CreateMessageParams {
             .join("\n");
         bpe.encode_with_special_tokens(&systems).len() as u32
             + bpe.encode_with_special_tokens(&messages).len() as u32
-    }
-}
-
-/// Thinking mode in Claude API Request
-#[derive(Deserialize, Serialize, Debug, Clone)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum Thinking {
-    Enabled { budget_tokens: u64 },
-    Disabled,
-    Adaptive,
-}
-
-impl Thinking {
-    pub fn new(budget_tokens: u64) -> Self {
-        Self::Enabled { budget_tokens }
     }
 }
 
