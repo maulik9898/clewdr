@@ -112,6 +112,29 @@ fn setup_client(cc_client_id: String) -> Result<ClaudeOauthClient, ClewdrError> 
 }
 
 impl ClaudeCodeState {
+    /// Runs the OAuth authorization step against the account's organizations,
+    /// trying each candidate (ordered by preference) until one succeeds.
+    ///
+    /// This tolerates organizations that reject the OAuth flow (e.g. canceled
+    /// or OAuth-restricted orgs) by falling back to the next candidate, instead
+    /// of committing to whichever chat-capable org happens to be listed first.
+    pub async fn authorize(&self) -> Result<ExchangeResult, ClewdrError> {
+        let orgs = self.get_organizations().await?;
+        let mut last_err = None;
+        for org_uuid in &orgs {
+            match self.exchange_code(org_uuid).await {
+                Ok(res) => return Ok(res),
+                Err(e) => {
+                    tracing::warn!("OAuth authorization failed for org {org_uuid}: {e}");
+                    last_err = Some(e);
+                }
+            }
+        }
+        Err(last_err.unwrap_or(ClewdrError::UnexpectedNone {
+            msg: "No organization available for OAuth authorization",
+        }))
+    }
+
     pub async fn exchange_code(&self, org_uuid: &str) -> Result<ExchangeResult, ClewdrError> {
         // Build OAuth authorization URL using Url::join for proper URL construction
         let authorize_url = CLEWDR_CONFIG
@@ -265,18 +288,13 @@ impl ClaudeCodeState {
                     cookie.token = None;
                 }
 
-                // First, verify the cookie is still valid and check account type
-                // This will return Reason::Null if cookie is invalid,
-                // or Reason::Free if account was downgraded
-                let org_uuid = self
-                    .get_organization()
+                // Re-run the OAuth authorization flow. This verifies the cookie
+                // is still valid (Reason::Null if not / Reason::Free if downgraded)
+                // and falls back across organizations if some reject OAuth.
+                let code_res = self
+                    .authorize()
                     .await
                     .inspect_err(|e| tracing::error!("Cannot re-authorize: {}", e))?;
-
-                // Cookie is valid and account has Pro+ permissions, proceed with re-authorization
-                let code_res = self.exchange_code(&org_uuid).await.inspect_err(|e| {
-                    tracing::error!("Failed to exchange code during re-authorization: {}", e)
-                })?;
                 match self.exchange_token(code_res).await {
                     Ok(_) => {
                         tracing::info!("Successfully re-authorized with new OAuth2 flow");

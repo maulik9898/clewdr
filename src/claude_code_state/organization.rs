@@ -10,8 +10,38 @@ use crate::{
     utils::print_out_json,
 };
 
+/// Returns true if the capability list indicates a usable Claude subscription
+/// (personal Pro/Max or a team/enterprise plan).
+fn has_subscription(capabilities: &[String]) -> bool {
+    capabilities.iter().any(|c| {
+        c.contains("pro") || c.contains("enterprise") || c.contains("raven") || c.contains("max")
+    })
+}
+
+/// Preference rank for OAuth authorization. Lower is tried first.
+///
+/// Personal subscription orgs (Max/Pro) are preferred because team/enterprise
+/// orgs frequently disallow the personal OAuth/Claude Code flow (and may be
+/// canceled/disabled), which makes authorization fail.
+fn org_priority(capabilities: &[String]) -> u8 {
+    if capabilities.iter().any(|c| c.contains("max")) {
+        0
+    } else if capabilities.iter().any(|c| c.contains("pro")) {
+        1
+    } else if has_subscription(capabilities) {
+        2
+    } else {
+        3
+    }
+}
+
 impl ClaudeCodeState {
-    pub async fn get_organization(&self) -> Result<String, ClewdrError> {
+    /// Fetches the account bootstrap and returns the UUIDs of all chat-capable
+    /// organizations, ordered by authorization preference (see [`org_priority`]).
+    ///
+    /// The caller should try each org in turn, since the first candidate may be
+    /// a canceled or OAuth-restricted organization.
+    pub async fn get_organizations(&self) -> Result<Vec<String>, ClewdrError> {
         let end_point = self
             .endpoint
             .join("api/bootstrap")
@@ -35,43 +65,57 @@ impl ClaudeCodeState {
         let memberships = bootstrap["account"]["memberships"]
             .as_array()
             .ok_or(Reason::Null)?;
-        let boot_acc_info = memberships
+
+        // Collect every chat-capable org along with its capabilities.
+        let mut candidates: Vec<(String, Vec<String>)> = memberships
             .iter()
-            .find(|m| {
-                m["organization"]["capabilities"]
-                    .as_array()
-                    .is_some_and(|c| c.iter().any(|c| c.as_str() == Some("chat")))
+            .filter_map(|m| {
+                let org = m["organization"].as_object()?;
+                let capabilities = org
+                    .get("capabilities")
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|c| c.as_str().map(str::to_string))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if !capabilities.iter().any(|c| c == "chat") {
+                    return None;
+                }
+                let uuid = org.get("uuid")?.as_str()?.to_string();
+                Some((uuid, capabilities))
             })
-            .and_then(|m| m["organization"].as_object())
-            .ok_or(Reason::Null)?;
-        let capabilities = boot_acc_info["capabilities"]
-            .as_array()
-            .map(|a| a.iter().filter_map(|c| c.as_str()).collect::<Vec<_>>())
-            .unwrap_or_default();
-        if !capabilities.iter().any(|c| {
-            c.contains("pro")
-                || c.contains("enterprise")
-                || c.contains("raven")
-                || c.contains("max")
-        }) {
+            .collect();
+
+        if candidates.is_empty() {
+            return Err(Reason::Null.into());
+        }
+
+        // Require at least one org with a usable subscription, otherwise this is
+        // a free account that cannot use the Claude Code flow.
+        if !candidates.iter().any(|(_, caps)| has_subscription(caps)) {
             return Err(Reason::Free.into());
         }
+
+        // Prefer personal Max/Pro orgs over team/enterprise ones.
+        candidates.sort_by_key(|(_, caps)| org_priority(caps));
+
         let email = bootstrap["account"]["email_address"]
             .as_str()
             .unwrap_or_default();
-        let uuid = boot_acc_info["uuid"]
-            .as_str()
-            .ok_or(ClewdrError::UnexpectedNone {
-                msg: "Failed to get organization UUID",
-            })?
-            .to_string();
-
         println!(
-            "[{}]\nemail: {}\ncapabilities: {}",
+            "[{}]\nemail: {}\norgs: {}",
             self.cookie.as_ref().unwrap().cookie.ellipse().green(),
             email.blue(),
-            capabilities.join(", ").blue()
+            candidates
+                .iter()
+                .map(|(uuid, caps)| format!("{} [{}]", uuid, caps.join(",")))
+                .collect::<Vec<_>>()
+                .join(", ")
+                .blue()
         );
-        Ok(uuid)
+
+        Ok(candidates.into_iter().map(|(uuid, _)| uuid).collect())
     }
 }

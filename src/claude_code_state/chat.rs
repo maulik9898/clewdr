@@ -60,8 +60,7 @@ impl ClaudeCodeState {
                 match state.check_token() {
                     TokenStatus::None => {
                         info!("No token found, requesting new token");
-                        let org = state.get_organization().await?;
-                        let code_res = state.exchange_code(&org).await?;
+                        let code_res = state.authorize().await?;
                         state.exchange_token(code_res).await?;
                         state.return_cookie(None).await;
                     }
@@ -231,8 +230,7 @@ impl ClaudeCodeState {
     pub async fn fetch_usage_metrics(&mut self) -> Result<serde_json::Value, ClewdrError> {
         match self.check_token() {
             TokenStatus::None => {
-                let org = self.get_organization().await?;
-                let code = self.exchange_code(&org).await?;
+                let code = self.authorize().await?;
                 self.exchange_token(code).await?;
             }
             TokenStatus::Expired => {
@@ -296,8 +294,7 @@ impl ClaudeCodeState {
                 match state.check_token() {
                     TokenStatus::None => {
                         info!("No token found, requesting new token");
-                        let org = state.get_organization().await?;
-                        let code_res = state.exchange_code(&org).await?;
+                        let code_res = state.authorize().await?;
                         state.exchange_token(code_res).await?;
                         state.return_cookie(None).await;
                     }

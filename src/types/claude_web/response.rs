@@ -251,8 +251,7 @@ impl ClaudeWebState {
         }
 
         // OAuth exchange to get access token
-        let org = code.get_organization().await.ok()?;
-        let exch = code.exchange_code(&org).await.ok()?;
+        let exch = code.authorize().await.ok()?;
         code.exchange_token(exch).await.ok()?;
         let access = code.cookie.as_ref()?.token.as_ref()?.access_token.clone();
 
@@ -284,8 +283,7 @@ async fn count_code_output_tokens_for_text(
     {
         code.set_cookie_header_value(val);
     }
-    let org = code.get_organization().await.ok()?;
-    let exch = code.exchange_code(&org).await.ok()?;
+    let exch = code.authorize().await.ok()?;
     code.exchange_token(exch).await.ok()?;
     let access = code.cookie.as_ref()?.token.as_ref()?.access_token.clone();
 
