@@ -1,6 +1,6 @@
 FROM node:lts-slim AS frontend-builder
 WORKDIR /build/frontend
-RUN npm install -g pnpm
+RUN npm install -g pnpm@10.14.0
 COPY frontend/ .
 RUN pnpm install && pnpm run build
 
