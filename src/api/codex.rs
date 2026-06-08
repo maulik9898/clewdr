@@ -174,16 +174,44 @@ pub async fn api_get_codex_credentials(
         return Err(ApiError::unauthorized());
     }
 
-    match handle.get_status().await {
-        Ok(info) => Ok(Json(serde_json::json!({
-            "valid": info.valid,
-            "exhausted": info.exhausted,
-        }))),
-        Err(e) => Err(ApiError::internal(format!(
-            "Failed to get codex credentials: {}",
-            e
-        ))),
-    }
+    let info = handle
+        .get_status()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to get codex credentials: {e}")))?;
+
+    let valid = augment_codex_usage(info.valid, &handle).await;
+    Ok(Json(serde_json::json!({
+        "valid": valid,
+        "exhausted": info.exhausted,
+    })))
+}
+
+/// Enrich each valid credential with live plan + Codex usage from the ChatGPT
+/// backend. A credential whose usage lookup fails is returned without a `usage`
+/// field rather than dropped.
+async fn augment_codex_usage(
+    creds: Vec<CodexCredential>,
+    handle: &CodexActorHandle,
+) -> Vec<serde_json::Value> {
+    let tasks = creds.into_iter().map(|cred| {
+        let handle = handle.clone();
+        async move {
+            let mut base =
+                serde_json::to_value(&cred).unwrap_or_else(|_| serde_json::json!({}));
+            let mut state = CodexState::new(handle);
+            state.credential = Some(cred);
+            match state.fetch_usage().await {
+                Ok(usage) => {
+                    if let Some(obj) = base.as_object_mut() {
+                        obj.insert("usage".to_string(), usage);
+                    }
+                }
+                Err(e) => info!("[Codex] Usage lookup failed: {e}"),
+            }
+            base
+        }
+    });
+    futures::future::join_all(tasks).await
 }
 
 /// Delete a codex credential

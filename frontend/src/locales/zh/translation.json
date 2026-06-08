@@ -209,7 +209,8 @@
       "unknown": "未知",
       "lastRefresh": "上次刷新",
       "resetsAt": "重置于",
-      "delete": "删除"
+      "delete": "删除",
+      "limitReached": "已达上限"
     }
   },
   "common": {

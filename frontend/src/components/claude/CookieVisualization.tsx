@@ -255,66 +255,68 @@ const CookieVisualization: React.FC = () => {
   };
 
   const renderQuotaStats = (status: CookieItem) => {
-    const sess = status.session_utilization;
-    const seven = status.seven_day_utilization;
-    const sevenSonnet = status.seven_day_sonnet_utilization;
-    const opus = status.seven_day_opus_utilization;
-    const hasAny =
-      typeof sess === "number" ||
-      typeof seven === "number" ||
-      typeof opus === "number" ||
-      typeof sevenSonnet === "number";
-    if (!hasAny) return null;
+    const bars: Array<{
+      label: string;
+      pct: number;
+      resetsAt?: string | null;
+    }> = [];
+    const push = (
+      label: string,
+      pct: number | null | undefined,
+      resetsAt?: string | null
+    ) => {
+      if (typeof pct === "number") bars.push({ label, pct, resetsAt });
+    };
+    push(
+      t("cookieStatus.quota.session"),
+      status.session_utilization,
+      status.session_resets_at
+    );
+    push(
+      t("cookieStatus.quota.sevenDay"),
+      status.seven_day_utilization,
+      status.seven_day_resets_at
+    );
+    push(
+      t("cookieStatus.quota.sevenDaySonnet"),
+      status.seven_day_sonnet_utilization,
+      status.seven_day_sonnet_resets_at
+    );
+    push(
+      t("cookieStatus.quota.sevenDayOpus"),
+      status.seven_day_opus_utilization,
+      status.seven_day_opus_resets_at
+    );
+    if (bars.length === 0) return null;
+
     return (
-      <div className="grid gap-1 text-xs text-gray-400">
-        {typeof sess === "number" && (
-          <div>
-            {t("cookieStatus.quota.session")}: {sess}%
-            {status.session_resets_at && (
-              <span className="ml-1 text-gray-500">
-                {t("cookieStatus.quota.resetsAt", {
-                  time: formatIsoTimestamp(status.session_resets_at),
-                })}
+      <div className="grid gap-1.5 mt-2">
+        {bars.map((b, i) => {
+          const p = Math.round(b.pct);
+          const barColor =
+            p >= 90 ? "bg-red-500" : p >= 70 ? "bg-yellow-500" : "bg-green-500";
+          return (
+            <div key={i} className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 w-24 shrink-0 truncate">
+                {b.label}
               </span>
-            )}
-          </div>
-        )}
-        {typeof seven === "number" && (
-          <div>
-            {t("cookieStatus.quota.sevenDay")}: {seven}%
-            {status.seven_day_resets_at && (
-              <span className="ml-1 text-gray-500">
-                {t("cookieStatus.quota.resetsAt", {
-                  time: formatIsoTimestamp(status.seven_day_resets_at),
-                })}
-              </span>
-            )}
-          </div>
-        )}
-        {typeof sevenSonnet === "number" && (
-          <div>
-            {t("cookieStatus.quota.sevenDaySonnet")}: {sevenSonnet}%
-            {status.seven_day_sonnet_resets_at && (
-              <span className="ml-1 text-gray-500">
-                {t("cookieStatus.quota.resetsAt", {
-                  time: formatIsoTimestamp(status.seven_day_sonnet_resets_at),
-                })}
-              </span>
-            )}
-          </div>
-        )}
-        {typeof opus === "number" && (
-          <div>
-            {t("cookieStatus.quota.sevenDayOpus")}: {opus}%
-            {status.seven_day_opus_resets_at && (
-              <span className="ml-1 text-gray-500">
-                {t("cookieStatus.quota.resetsAt", {
-                  time: formatIsoTimestamp(status.seven_day_opus_resets_at),
-                })}
-              </span>
-            )}
-          </div>
-        )}
+              <div className="h-1.5 w-28 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className={`h-full ${barColor}`}
+                  style={{ width: `${Math.min(p, 100)}%` }}
+                />
+              </div>
+              <span className="text-xs text-gray-400 w-9 shrink-0">{p}%</span>
+              {b.resetsAt && (
+                <span className="text-xs text-gray-500 truncate">
+                  {t("cookieStatus.quota.resetsAt", {
+                    time: formatIsoTimestamp(b.resetsAt),
+                  })}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -594,7 +596,7 @@ const CookieVisualization: React.FC = () => {
             const contextControls = renderContextControls(status);
             const usageStats = renderUsageStats(status);
             const quotaStats = renderQuotaStats(status);
-            const hasMeta = contextControls || usageStats || quotaStats;
+            const hasDetails = contextControls || usageStats;
             return (
               <div
                 key={index}
@@ -602,15 +604,15 @@ const CookieVisualization: React.FC = () => {
               >
                 <div className="text-green-300 flex-grow mr-4 min-w-0 mb-1 sm:mb-0">
                   <CookieValue cookie={status.cookie} />
-                  {hasMeta && (
-                    <details className="mt-1 text-xs text-gray-400">
+                  {quotaStats}
+                  {hasDetails && (
+                    <details className="mt-2 text-xs text-gray-400">
                       <summary className="cursor-pointer text-gray-500 hover:text-gray-300">
                         {t("cookieStatus.meta.summary")}
                       </summary>
                       <div className="mt-2 space-y-2">
                         {contextControls}
                         {usageStats}
-                        {quotaStats}
                       </div>
                     </details>
                   )}
@@ -639,7 +641,7 @@ const CookieVisualization: React.FC = () => {
             const contextControls = renderContextControls(status);
             const usageStats = renderUsageStats(status);
             const quotaStats = renderQuotaStats(status);
-            const hasMeta = contextControls || usageStats || quotaStats;
+            const hasDetails = contextControls || usageStats;
             return (
               <div
                 key={index}
@@ -647,15 +649,15 @@ const CookieVisualization: React.FC = () => {
               >
                 <div className="text-yellow-300 flex-grow mr-4 min-w-0 mb-1 sm:mb-0">
                   <CookieValue cookie={status.cookie} />
-                  {hasMeta && (
-                    <details className="mt-1 text-xs text-gray-400">
+                  {quotaStats}
+                  {hasDetails && (
+                    <details className="mt-2 text-xs text-gray-400">
                       <summary className="cursor-pointer text-gray-500 hover:text-gray-300">
                         {t("cookieStatus.meta.summary")}
                       </summary>
                       <div className="mt-2 space-y-2">
                         {contextControls}
                         {usageStats}
-                        {quotaStats}
                       </div>
                     </details>
                   )}

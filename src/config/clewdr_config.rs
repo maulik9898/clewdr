@@ -345,11 +345,6 @@ impl ClewdrConfig {
             self.admin_password = generate_password();
         }
         self.cookie_array = self.cookie_array.into_iter().map(|x| x.reset()).collect();
-        self.codex_credentials = self
-            .codex_credentials
-            .into_iter()
-            .map(|x| x.reset())
-            .collect();
         self.wreq_proxy = self.proxy.to_owned().and_then(|p| {
             Proxy::all(p)
                 .inspect_err(|e| {

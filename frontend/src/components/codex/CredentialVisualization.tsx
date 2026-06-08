@@ -4,6 +4,19 @@ import Button from "../common/Button";
 import StatusMessage from "../common/StatusMessage";
 import { getCodexCredentials, deleteCodexCredential } from "../../api";
 
+interface CodexUsageWindow {
+  used_percent?: number | null;
+  window_minutes?: number | null;
+  resets_at?: number | null;
+}
+
+interface CodexUsage {
+  plan_type?: string | null;
+  limit_reached?: boolean | null;
+  primary?: CodexUsageWindow | null;
+  secondary?: CodexUsageWindow | null;
+}
+
 interface CodexCredential {
   label?: string;
   account_id?: string;
@@ -14,6 +27,7 @@ interface CodexCredential {
     last_refresh: number;
   };
   reset_time?: number | null;
+  usage?: CodexUsage | null;
 }
 
 interface CredentialData {
@@ -60,6 +74,42 @@ const CredentialVisualization: React.FC = () => {
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleString();
+  };
+
+  const formatWindow = (minutes?: number | null) => {
+    if (!minutes || minutes <= 0) return "";
+    if (minutes % (60 * 24) === 0) return `${minutes / (60 * 24)}d`;
+    if (minutes % 60 === 0) return `${minutes / 60}h`;
+    return `${minutes}m`;
+  };
+
+  const renderUsageWindow = (
+    fallbackLabel: string,
+    w?: CodexUsageWindow | null
+  ) => {
+    if (!w || w.used_percent == null) return null;
+    const pct = Math.round(w.used_percent);
+    const barColor =
+      pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-green-500";
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-400 w-8">
+          {formatWindow(w.window_minutes) || fallbackLabel}
+        </span>
+        <div className="h-1.5 w-28 bg-gray-700 rounded-full overflow-hidden">
+          <div
+            className={`h-full ${barColor}`}
+            style={{ width: `${Math.min(pct, 100)}%` }}
+          />
+        </div>
+        <span className="text-xs text-gray-400 w-9">{pct}%</span>
+        {w.resets_at != null && (
+          <span className="text-xs text-gray-500">
+            {t("codex.credentials.resetsAt")}: {formatDate(w.resets_at)}
+          </span>
+        )}
+      </div>
+    );
   };
 
   const getTokenStatus = (cred: CodexCredential) => {
@@ -132,6 +182,16 @@ const CredentialVisualization: React.FC = () => {
                         ? t("codex.credentials.active")
                         : t("codex.credentials.cooldown")}
                     </span>
+                    {cred.usage?.plan_type && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-300 uppercase">
+                        {cred.usage.plan_type}
+                      </span>
+                    )}
+                    {cred.usage?.limit_reached && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-400">
+                        {t("codex.credentials.limitReached")}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 mt-1">
                     <span className={`text-xs ${status.color}`}>
@@ -148,6 +208,13 @@ const CredentialVisualization: React.FC = () => {
                       </span>
                     )}
                   </div>
+                  {cred.usage &&
+                    (cred.usage.primary || cred.usage.secondary) && (
+                      <div className="mt-2 space-y-1">
+                        {renderUsageWindow("5h", cred.usage.primary)}
+                        {renderUsageWindow("7d", cred.usage.secondary)}
+                      </div>
+                    )}
                 </div>
                 <button
                   onClick={() => handleDelete(cred)}

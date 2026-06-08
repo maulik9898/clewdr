@@ -8,7 +8,7 @@ use tracing::{error, info};
 
 use crate::{
     codex_state::{CodexState, CodexTokenStatus},
-    config::CLEWDR_CONFIG,
+    config::{CLEWDR_CONFIG, CODEX_USAGE_URL},
     error::{ClewdrError, WreqSnafu},
 };
 
@@ -104,13 +104,13 @@ impl CodexState {
                             .await;
                         continue;
                     }
-                    // On 429, mark exhausted
+                    // On 429, surface the real rate-limit response (upstream
+                    // status + body with resets_at) to the client instead of
+                    // retrying. Codex usage windows recover on their own, so
+                    // there is no cooldown to bench the credential.
                     if matches!(&e, ClewdrError::ClaudeHttpError { code, .. } if code.as_u16() == 429)
                     {
-                        state
-                            .return_credential(Some("Rate limited".to_string()))
-                            .await;
-                        continue;
+                        return Err(e);
                     }
                     // On 5xx, retry with exponential backoff
                     if matches!(&e, ClewdrError::ClaudeHttpError { code, .. } if code.is_server_error())
@@ -125,6 +125,84 @@ impl CodexState {
             }
         }
         Err(ClewdrError::TooManyRetries)
+    }
+
+    /// Fetch the account's plan and Codex rate-limit usage from the ChatGPT
+    /// backend (`wham/usage`), reduced to the fields the dashboard renders.
+    pub async fn fetch_usage(&self) -> Result<serde_json::Value, ClewdrError> {
+        let cred = self
+            .credential
+            .as_ref()
+            .ok_or(ClewdrError::UnexpectedNone {
+                msg: "No credential available for usage lookup",
+            })?;
+        let access_token = cred
+            .token
+            .as_ref()
+            .ok_or(ClewdrError::UnexpectedNone {
+                msg: "No access token available for usage lookup",
+            })?
+            .access_token
+            .clone();
+
+        let mut req = self
+            .client
+            .get(CODEX_USAGE_URL)
+            .bearer_auth(access_token)
+            .header("accept", "application/json");
+        if let Some(ref account_id) = cred.account_id {
+            req = req.header("chatgpt-account-id", account_id.as_str());
+        }
+
+        let resp = req.send().await.context(WreqSnafu {
+            msg: "Failed to fetch codex usage",
+        })?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(ClewdrError::ClaudeHttpError {
+                code: status,
+                inner: crate::error::ClaudeErrorBody {
+                    message: serde_json::json!(resp.text().await.unwrap_or_default()),
+                    r#type: "codex_usage_error".to_string(),
+                    code: Some(status.as_u16()),
+                },
+            });
+        }
+        let raw: serde_json::Value = resp.json().await.context(WreqSnafu {
+            msg: "Failed to parse codex usage response",
+        })?;
+
+        Ok(Self::compact_usage(&raw))
+    }
+
+    /// Reduce the verbose `wham/usage` payload to plan + the two rate-limit
+    /// windows the dashboard shows.
+    fn compact_usage(raw: &serde_json::Value) -> serde_json::Value {
+        let window = |w: &serde_json::Value| {
+            serde_json::json!({
+                "used_percent": w.get("used_percent").and_then(serde_json::Value::as_f64),
+                "window_minutes": w
+                    .get("limit_window_seconds")
+                    .and_then(serde_json::Value::as_i64)
+                    .map(|s| s / 60),
+                "resets_at": w.get("reset_at").and_then(serde_json::Value::as_i64),
+            })
+        };
+        let rate_limit = raw.get("rate_limit");
+        serde_json::json!({
+            "plan_type": raw.get("plan_type").and_then(serde_json::Value::as_str),
+            "limit_reached": rate_limit
+                .and_then(|r| r.get("limit_reached"))
+                .and_then(serde_json::Value::as_bool),
+            "primary": rate_limit
+                .and_then(|r| r.get("primary_window"))
+                .filter(|w| !w.is_null())
+                .map(window),
+            "secondary": rate_limit
+                .and_then(|r| r.get("secondary_window"))
+                .filter(|w| !w.is_null())
+                .map(window),
+        })
     }
 
     /// Forward the raw request body to OpenAI's Responses API and stream back SSE

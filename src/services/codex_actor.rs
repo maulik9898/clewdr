@@ -11,8 +11,6 @@ use crate::{
     error::ClewdrError,
 };
 
-const INTERVAL: u64 = 300;
-
 #[derive(Debug, Serialize, Clone)]
 pub struct CodexCredentialInfo {
     pub valid: Vec<CodexCredential>,
@@ -23,7 +21,6 @@ pub struct CodexCredentialInfo {
 enum CodexActorMessage {
     Return(CodexCredential, Option<String>),
     Submit(CodexCredential),
-    CheckReset,
     Request(RpcReplyPort<Result<CodexCredential, ClewdrError>>),
     GetStatus(RpcReplyPort<CodexCredentialInfo>),
     Delete(CodexCredential, RpcReplyPort<Result<(), ClewdrError>>),
@@ -67,28 +64,7 @@ impl CodexActor {
         );
     }
 
-    fn reset(state: &mut CodexActorState) {
-        let mut reset_creds = Vec::new();
-        state.exhausted.retain(|cred| {
-            let reset_cred = cred.clone().reset();
-            if reset_cred.reset_time.is_none() {
-                reset_creds.push(reset_cred);
-                false
-            } else {
-                true
-            }
-        });
-        if reset_creds.is_empty() {
-            return;
-        }
-        for c in reset_creds {
-            state.valid.push_back(c);
-        }
-        Self::log(state);
-    }
-
     fn dispatch(state: &mut CodexActorState) -> Result<CodexCredential, ClewdrError> {
-        Self::reset(state);
         let cred = state
             .valid
             .pop_front()
@@ -98,21 +74,16 @@ impl CodexActor {
     }
 
     fn collect(state: &mut CodexActorState, cred: CodexCredential, reason: Option<String>) {
-        let Some(reason) = reason else {
-            // Update in place
-            if let Some(existing) = state.valid.iter_mut().find(|c| **c == cred) {
-                *existing = cred;
-                Self::save(state);
-            }
-            return;
-        };
-        warn!("[Codex] Credential returned with reason: {}", reason);
-        state.valid.retain(|c| c != &cred);
-        let mut exhausted_cred = cred;
-        exhausted_cred.reset_time = Some(chrono::Utc::now().timestamp() + 3600);
-        state.exhausted.push(exhausted_cred);
-        Self::save(state);
-        Self::log(state);
+        if let Some(reason) = reason {
+            warn!("[Codex] Credential returned with reason: {reason}");
+        }
+        // Keep the credential in rotation regardless of the reason. Real Codex
+        // rate-limit windows (5h / 7d) recover on their own, so we no longer
+        // bench credentials on an artificial timer.
+        if let Some(existing) = state.valid.iter_mut().find(|c| **c == cred) {
+            *existing = cred;
+            Self::save(state);
+        }
     }
 
     fn accept(state: &mut CodexActorState, cred: CodexCredential) {
@@ -170,10 +141,10 @@ impl Actor for CodexActor {
         _arguments: Self::Arguments,
     ) -> Result<Self::State, ActorProcessingErr> {
         let all = CLEWDR_CONFIG.load().codex_credentials.clone();
-        let valid = VecDeque::from_iter(all.iter().filter(|c| c.reset_time.is_none()).cloned());
-        let exhausted: Vec<_> = all.into_iter().filter(|c| c.reset_time.is_some()).collect();
-
-        let state = CodexActorState { valid, exhausted };
+        let state = CodexActorState {
+            valid: VecDeque::from(all),
+            exhausted: Vec::new(),
+        };
         CodexActor::log(&state);
         Ok(state)
     }
@@ -190,9 +161,6 @@ impl Actor for CodexActor {
             }
             CodexActorMessage::Submit(cred) => {
                 Self::accept(state, cred);
-            }
-            CodexActorMessage::CheckReset => {
-                Self::reset(state);
             }
             CodexActorMessage::Request(reply_port) => {
                 let result = Self::dispatch(state);
@@ -228,24 +196,7 @@ pub struct CodexActorHandle {
 impl CodexActorHandle {
     pub async fn start() -> Result<Self, ractor::SpawnErr> {
         let (actor_ref, _join_handle) = Actor::spawn(None, CodexActor, ()).await?;
-        let handle = Self {
-            actor_ref: actor_ref.clone(),
-        };
-        handle.spawn_timeout_checker().await;
-        Ok(handle)
-    }
-
-    async fn spawn_timeout_checker(&self) {
-        let actor_ref = self.actor_ref.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(INTERVAL));
-            loop {
-                interval.tick().await;
-                if ractor::cast!(actor_ref, CodexActorMessage::CheckReset).is_err() {
-                    break;
-                }
-            }
-        });
+        Ok(Self { actor_ref })
     }
 
     pub async fn request(&self) -> Result<CodexCredential, ClewdrError> {

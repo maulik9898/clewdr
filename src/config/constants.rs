@@ -33,6 +33,8 @@ pub const CODEX_DEVICE_VERIFY_URL: &str = "https://auth.openai.com/codex/device"
 pub const CODEX_API_BASE: &str = "https://api.openai.com/v1/";
 /// ChatGPT auth (device code login) uses a different backend
 pub const CODEX_CHATGPT_API_BASE: &str = "https://chatgpt.com/backend-api/codex/";
+/// Account plan + Codex rate-limit usage (ChatGPT backend, device-code auth)
+pub const CODEX_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 
 pub static ENDPOINT_URL: LazyLock<Url> = LazyLock::new(|| {
     Url::parse(CLAUDE_ENDPOINT).unwrap_or_else(|_| {

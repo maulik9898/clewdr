@@ -209,7 +209,8 @@
       "unknown": "Unknown",
       "lastRefresh": "Last refresh",
       "resetsAt": "Resets at",
-      "delete": "Delete"
+      "delete": "Delete",
+      "limitReached": "Limit reached"
     }
   },
   "common": {

@@ -506,18 +506,6 @@ impl CodexCredential {
             .unwrap_or("unknown")
             .to_string()
     }
-
-    pub fn reset(self) -> Self {
-        if let Some(t) = self.reset_time
-            && t < chrono::Utc::now().timestamp()
-        {
-            return Self {
-                reset_time: None,
-                ..self
-            };
-        }
-        self
-    }
 }
 
 #[cfg(test)]
