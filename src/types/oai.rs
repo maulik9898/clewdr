@@ -30,6 +30,7 @@ impl From<CreateMessageParams> for ClaudeCreateMessageParams {
             model: params.model,
             container: None,
             context_management: None,
+            cache_control: None,
             mcp_servers: None,
             stop_sequences: params.stop,
             thinking: params.thinking,

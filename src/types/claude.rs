@@ -48,6 +48,9 @@ pub struct CreateMessageParams {
     /// Context management configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_management: Option<serde_json::Value>,
+    /// Top-level cache control (passthrough, opaque to clewdr)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<serde_json::Value>,
     /// MCP servers to be utilized in this request
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<Vec<McpServer>>,
@@ -952,6 +955,37 @@ mod tests {
         let reserialized = serde_json::to_value(&params).unwrap();
         assert_eq!(reserialized["tools"][0]["type"], "bash_20250124");
         assert_eq!(reserialized["tools"][1]["type"], "text_editor_20250124");
+    }
+
+    #[test]
+    fn preserves_top_level_cache_control() {
+        let body = json!({
+            "max_tokens": 1024,
+            "messages": [
+                { "role": "user", "content": "hi" }
+            ],
+            "model": "claude-sonnet-4-5-20250929",
+            "cache_control": { "type": "ephemeral" }
+        });
+
+        let params: CreateMessageParams = serde_json::from_value(body).unwrap();
+        let reserialized = serde_json::to_value(&params).unwrap();
+        assert_eq!(reserialized["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn omits_absent_cache_control() {
+        let body = json!({
+            "max_tokens": 1024,
+            "messages": [
+                { "role": "user", "content": "hi" }
+            ],
+            "model": "claude-sonnet-4-5-20250929"
+        });
+
+        let params: CreateMessageParams = serde_json::from_value(body).unwrap();
+        let reserialized = serde_json::to_value(&params).unwrap();
+        assert!(reserialized.get("cache_control").is_none());
     }
 
     #[test]
