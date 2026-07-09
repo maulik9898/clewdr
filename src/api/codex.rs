@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::{Json, extract::State, response::Response};
+use axum::{Json, extract::State, http::HeaderMap, response::Response};
 use axum_auth::AuthBearer;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -22,9 +22,10 @@ use crate::{
 /// Proxy endpoint for Codex requests - pure passthrough to OpenAI Responses API
 pub async fn api_codex_responses(
     State(provider): State<Arc<CodexProvider>>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, ClewdrError> {
-    let result = provider.invoke(CodexInvocation { body }).await?;
+    let result = provider.invoke(CodexInvocation { body, headers }).await?;
     Ok(result.response)
 }
 

@@ -16,6 +16,9 @@ use crate::{
 
 pub struct CodexInvocation {
     pub body: Bytes,
+    /// Inbound client headers; the forwarder copies an allowlisted subset
+    /// (cache-affinity routing) verbatim to the ChatGPT backend.
+    pub headers: http::HeaderMap,
 }
 
 pub struct CodexProviderResponse {
@@ -160,7 +163,7 @@ impl LLMProvider for CodexProvider {
         );
 
         let stopwatch = std::time::Instant::now();
-        let response = state.try_chat(request.body).await?;
+        let response = state.try_chat(request.body, request.headers).await?;
         let elapsed = stopwatch.elapsed();
         info!(
             "[Codex][FIN] elapsed: {}s",

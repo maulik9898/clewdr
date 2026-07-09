@@ -12,11 +12,19 @@ use crate::{
     error::{ClewdrError, WreqSnafu},
 };
 
+/// Client headers forwarded verbatim to the ChatGPT backend to preserve
+/// prompt-cache affinity. The native Codex CLI sends stable per-conversation
+/// identity on every request; without it the backend silently re-keys the
+/// cache. Only these are forwarded — never authorization, host, etc.
+const CODEX_FORWARD_HEADERS: [&str; 4] =
+    ["session-id", "thread-id", "x-client-request-id", "originator"];
+
 impl CodexState {
     /// Main entry point: proxy a request to OpenAI Responses API with retry logic
     pub async fn try_chat(
         &mut self,
         body: Bytes,
+        client_headers: http::HeaderMap,
     ) -> Result<axum::response::Response, ClewdrError> {
         for i in 0..CLEWDR_CONFIG.load().max_retries + 1 {
             if i > 0 {
@@ -67,7 +75,9 @@ impl CodexState {
                     .access_token
                     .clone();
 
-                state.forward_request(&access_token, body).await
+                state
+                    .forward_request(&access_token, body, &client_headers)
+                    .await
             }
             .await;
 
@@ -210,15 +220,17 @@ impl CodexState {
         &self,
         access_token: &str,
         body: Bytes,
+        client_headers: &http::HeaderMap,
     ) -> Result<axum::response::Response, ClewdrError> {
-        // Strip unsupported parameters and check stream flag
+        // Strip unsupported parameters and check stream flag. `prompt_cache_key`
+        // is deliberately kept — it is the body-side cache-affinity signal the
+        // backend uses to route to a warm prefix.
         let (body, request_wants_stream) = {
             let mut val: serde_json::Value =
                 serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
             let stream = val.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
             if let Some(obj) = val.as_object_mut() {
                 obj.remove("prompt_cache_retention");
-                obj.remove("prompt_cache_key");
                 obj.remove("safety_identifier");
             }
             let cleaned = serde_json::to_vec(&val).unwrap_or_else(|_| body.to_vec());
@@ -242,6 +254,15 @@ impl CodexState {
         if let Some(ref cred) = self.credential {
             if let Some(ref account_id) = cred.account_id {
                 req = req.header("chatgpt-account-id", account_id.as_str());
+            }
+        }
+
+        // Forward cache-affinity routing headers verbatim when the client sent
+        // them (absent headers are simply skipped — no synthesis, no defaults).
+        for name in CODEX_FORWARD_HEADERS {
+            if let Some(value) = client_headers.get(name) {
+                req = req.header(name, value);
+                info!("[Codex] forwarding cache-affinity header: {}", name.green());
             }
         }
 
